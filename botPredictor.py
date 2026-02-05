@@ -60,8 +60,8 @@ except Exception:
 warnings.filterwarnings("ignore", message=".*tf.function retracing.*")
 
 diccionario_config = get_credentials()
-ws_rpa = diccionario_config.get("ws_rpa", "http://172.25.111.102:9061") #"http://localhost:55881"
-ws_rpa_drive = diccionario_config.get("ws_rpa_drive", "http://172.25.111.102:9192")
+ws_rpa = diccionario_config.get("ws_rpa", "http://localhost:55881") #"http://localhost:55881"
+ws_rpa_drive = diccionario_config.get("ws_rpa_drive", "http://localhost:55881")
 apikey = diccionario_config.get("apikey", "")
 idfolderdrive = diccionario_config.get("idfolderdrive", "")
 contador_limite = diccionario_config.get("contador_limite", 100)
@@ -179,11 +179,11 @@ async def download(iddrive, filename):
         return False
 
 
-def trainer(dataset="", out_put="", id_version=0):
+def trainer(dataset=f"C:\Repos\Temp\OutputsPredictor\DataSet\CreditRisk\creditRisk.csv", out_put="", id_version=3):
     try:
         params = {
             "csv_path": dataset,
-            "target": "Survived",
+            "target": "score_riesgo",
             "task": None,
             "mode": "auto",
             "models": None,
@@ -306,6 +306,24 @@ def procesa_pendiente(registro):
 
     except Exception as e:
         logging.error(f"Error al procesar pendiente: {e}")
+        asyncio.run( rpa.pendientes_act(id_pendiente=registro["id_Pendiente"], estatus_id=5, activo=1,
+                               detalle=f"Error al procesar pendiente: {e}"))
+        result["error"] = 1
+        result["detalle"] = str(e)
+        return result
+
+
+def procesa_pendiente_local():
+    result = {
+        "error": 0,
+        "detalle": ""
+    }
+    try:
+        ret, report, modelpath = trainer()
+        return ret, report, modelpath
+
+    except Exception as e:
+        logging.error(f"Error al procesar pendiente: {e}")
         result["error"] = 1
         result["detalle"] = str(e)
         return result
@@ -374,7 +392,14 @@ if __name__ == "__main__":
     MIME_TYPE = "application/zip"
     API_URL = "https://localhost:7166/api/RPA/SubirArchivoV3"
 
-    main()
+
+    MODO_LOCAL = False
+
+    if not MODO_LOCAL:
+        main()
+    else:
+        procesa_pendiente_local()
+
     """
     asyncio.run(upload_file_in_chunks(
         file_path=FILE_PATH,

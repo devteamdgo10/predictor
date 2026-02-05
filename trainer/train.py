@@ -71,14 +71,14 @@ except Exception:
 # =========================
 # Logger único del módulo
 # =========================
-logging = logging.getLogger("trainer")
-if not logging.handlers:
-    _h = logging.StreamHandler()
-    _fmt = logging.Formatter("[%(levelname)s] %(asctime)s - %(name)s - %(message)s")
+logger = logging.getLogger("trainer")
+if not logger.handlers:
+    _h = logger.StreamHandler()
+    _fmt = logger.Formatter("[%(levelname)s] %(asctime)s - %(name)s - %(message)s")
     _h.setFormatter(_fmt)
-    logging.addHandler(_h)
-logging.setLevel(logging.INFO)
-logging.propagate = False  # evita duplicados si el root logger tiene handler
+    logger.addHandler(_h)
+logger.setLevel(logging.INFO)
+logger.propagate = False  # evita duplicados si el root logger tiene handler
 
 # ====================================
 # Flags/switches de comportamiento
@@ -398,13 +398,13 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
 
     # Logs básicos del dataset
     try:
-        logging.info(f"Dataset shape: X={X.shape}, y={len(y)}")
+        logger.info(f"Dataset shape: X={X.shape}, y={len(y)}")
         dtypes_counts = {str(dt): int((X.dtypes == dt).sum()) for dt in X.dtypes.unique()}
-        logging.info(f"Dtypes: {dtypes_counts}")
+        logger.info(f"Dtypes: {dtypes_counts}")
         null_counts = X.isna().sum().sort_values(ascending=False)
         top_nulls = {k: int(v) for k, v in null_counts.head(10).items() if v > 0}
         if top_nulls:
-            logging.info(f"Top columnas con nulos: {top_nulls}")
+            logger.info(f"Top columnas con nulos: {top_nulls}")
     except Exception:
         pass
 
@@ -412,11 +412,11 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
     if IMpute_MISSING_INDICATORS := IMPUTE_MISSING_INDICATORS:
         X, n_mi = _maybe_add_missing_indicators(X)
         if n_mi > 0:
-            logging.info(f"Añadidos indicadores de nulos para {n_mi} columna(s).")
+            logger.info(f"Añadidos indicadores de nulos para {n_mi} columna(s).")
 
     # 1.2 Heurísticas automáticas (genéricas)
     task = _safe_detect_task(y, override=getattr(cfg.train, "task", None))
-    logging.info(f"Detected task: {task}")
+    logger.info(f"Detected task: {task}")
 
     # [TARGET MAP] Si clasificación y el target no es numérico, mapear a 0..K-1
     target_mapping: Optional[Dict[str, int]] = None
@@ -427,7 +427,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
     if DROP_SUSPECT_LEAKS:
         present = [c for c in SUSPECT_LEAK_COLS if c in X.columns]
         if present:
-            logging.warning(f"Columnas potencialmente con fuga quitadas: {present}")
+            logger.warning(f"Columnas potencialmente con fuga quitadas: {present}")
             X = X.drop(columns=present, errors="ignore")
             try:
                 df.drop(columns=present, errors="ignore", inplace=True)
@@ -436,18 +436,18 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
 
     # Desbalance y skew (para logs + tweaks de config)
     ratio, pos_rate = _class_imbalance_info(y)
-    logging.info(f"Imbalance ratio (max/min): {ratio:.2f} | Positive-rate aprox: {pos_rate:.3f}")
+    logger.info(f"Imbalance ratio (max/min): {ratio:.2f} | Positive-rate aprox: {pos_rate:.3f}")
 
     skew_cols = _skewed_numeric_columns(X, skew_thresh=1.0)
     if skew_cols:
-        logging.info(f"Columnas numéricas con skew >= 1.0 (ej.): {skew_cols[:10]}{'...' if len(skew_cols) > 10 else ''}")
+        logger.info(f"Columnas numéricas con skew >= 1.0 (ej.): {skew_cols[:10]}{'...' if len(skew_cols) > 10 else ''}")
 
     # 2) Artefactos / salida
     # todo cambiar por variable
     # run_dir = out_put + '_' + task
     output_dir = getattr(cfg.train, "output_dir", "outputs")
     run_dir = _timestamped_dir(output_dir, prefix=f"{task}")
-    logging.info(f"Artifacts output: {run_dir}")
+    logger.info(f"Artifacts output: {run_dir}")
 
     # Guardar config
     try:
@@ -475,7 +475,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
     try:
         num_cols = list(X.select_dtypes(include=[np.number]).columns)
         cat_cols = list(X.select_dtypes(exclude=[np.number]).columns)
-        logging.info("Columnas utilizadas:\n"
+        logger.info("Columnas utilizadas:\n"
                     f"Total columnas usadas: {len(X.columns)}\n"
                     f"- Numéricas ({len(num_cols)}): {num_cols}\n"
                     f"- Categóricas ({len(cat_cols)}): {cat_cols}\n")
@@ -498,7 +498,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
         if SAVE_MISSING_BAR:
             _save_missing_bar(X, Path(run_dir) / "missing_bar.png")
     except Exception as e:
-        logging.warning(f"No se pudieron generar gráficas de diagnóstico inicial: {e}")
+        logger.warning(f"No se pudieron generar gráficas de diagnóstico inicial: {e}")
 
     # [AUTO-PLAN] Generar plan automático y guardarlo
     plan = build_auto_plan(
@@ -545,7 +545,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
     # Si clasif. y desbalance alto y métrica no definida, usamos f1_macro
     if AUTO_TWEAKS and task == "classification" and primary_metric_cfg is None and ratio >= 1.5:
         primary_metric = "f1_macro"
-        logging.info("Auto-tweak: métrica primaria -> f1_macro por desbalance.")
+        logger.info("Auto-tweak: métrica primaria -> f1_macro por desbalance.")
 
     # [AUTO-PLAN] Aplicar sugerencias del plan sin pisar config explícita
     plan_metric = plan.get("primary_metric", None)
@@ -558,7 +558,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
         if plan.get("enable_cache", True):
             cache_dir = Path(run_dir) / ".cache"
             pipeline_memory = joblib.Memory(str(cache_dir), verbose=0)
-            logging.info("Auto-plan: habilitado Pipeline(memory=.cache)")
+            logger.info("Auto-plan: habilitado Pipeline(memory=.cache)")
     except Exception:
         pipeline_memory = None
 
@@ -587,17 +587,17 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
             select_k_best_plan = plan.get("preprocess", {}).get("select_k_best", None)
             if select_k_best_plan is not None:
                 select_k_best = select_k_best_plan
-                logging.info(f"Auto-plan: select_k_best -> {select_k_best}")
+                logger.info(f"Auto-plan: select_k_best -> {select_k_best}")
             else:
                 k_auto = _auto_select_k(len(X.columns))
                 select_k_best = k_auto
-                logging.info(f"Auto-tweak: select_k_best -> {k_auto}")
+                logger.info(f"Auto-tweak: select_k_best -> {k_auto}")
 
         # ✅ Clamp mínimo para evitar k == n_features (no hace nada si ya es menor)
         if isinstance(select_k_best, int) and select_k_best >= len(X.columns):
             new_k = max(1, len(X.columns) - 1)
             if new_k != select_k_best:
-                logging.info(f"Clamp select_k_best: {select_k_best} → {new_k} (d={len(X.columns)})")
+                logger.info(f"Clamp select_k_best: {select_k_best} → {new_k} (d={len(X.columns)})")
             select_k_best = new_k
 
         scale_for = getattr(cfg.preprocess, "scale_for", None)
@@ -608,7 +608,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
         if AUTO_TWEAKS and AUTO_POWER_TRANSFORM and (not power_transform) and len(skew_cols) > 0:
             pt_from_plan = plan.get("preprocess", {}).get("power_transform", True)
             power_transform = bool(pt_from_plan)
-            logging.info("Auto-plan: power_transform -> True (skew alto detectado).")
+            logger.info("Auto-plan: power_transform -> True (skew alto detectado).")
 
         # Preprocesador
         pre = build_preprocessor(
@@ -646,10 +646,10 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                 cw_plan = plan.get("class_weight", None)
                 if cw_plan is not None:
                     class_weight_cfg = cw_plan
-                    logging.info(f"Auto-plan: class_weight -> {class_weight_cfg}")
+                    logger.info(f"Auto-plan: class_weight -> {class_weight_cfg}")
             if AUTO_TWEAKS and ratio >= 1.5 and class_weight_cfg is None:
                 class_weight_cfg = "balanced"
-                logging.info("Auto-tweak: class_weight -> balanced (desbalance alto).")
+                logger.info("Auto-tweak: class_weight -> balanced (desbalance alto).")
 
             # Intentar usar class_weight nativo
             if class_weight_cfg == "balanced":
@@ -737,12 +737,12 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                     est_name = type(est).__name__.lower()
                     if _want_pos_weight is not None and "xgb" in est_name and hasattr(est, "set_params"):
                         est.set_params(scale_pos_weight=float(_want_pos_weight))
-                        logging.info(f"[{mname}] XGB scale_pos_weight={float(_want_pos_weight):.3f}")
+                        logger.info(f"[{mname}] XGB scale_pos_weight={float(_want_pos_weight):.3f}")
                     if _want_is_unbalance and "lgbm" in est_name and hasattr(est, "set_params"):
                         p = est.get_params()
                         if "is_unbalance" in p:
                             est.set_params(is_unbalance=True)
-                            logging.info(f"[{mname}] LGBM is_unbalance=True")
+                            logger.info(f"[{mname}] LGBM is_unbalance=True")
                 except Exception:
                     pass
 
@@ -757,7 +757,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
 
         pipe = PipeClass(steps, memory=pipeline_memory)
         if use_resampling:
-            logging.info(f"[{mname}] Resampling=SMOTE aplicado (ratio≈{ratio:.2f}) dentro de CV")
+            logger.info(f"[{mname}] Resampling=SMOTE aplicado (ratio≈{ratio:.2f}) dentro de CV")
 
         n_jobs_eff = n_jobs if not is_mlp else 1
 
@@ -768,16 +768,16 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
 
         # Early stopping sugerido (registrado, no aplicado en búsqueda por limitación con Pipeline)
         if plan.get("early_stopping", False) and family in ("xgb", "lgbm"):
-            logging.info("Auto-plan: early_stopping sugerido (omitido en búsqueda por limitación con Pipeline).")
+            logger.info("Auto-plan: early_stopping sugerido (omitido en búsqueda por limitación con Pipeline).")
 
         # ==== LOG: Setup ====
         try:
             scale_flag = "on" if (
                     scale_for and any(k in (scale_for or []) for k in ["linear", "logistic", "mlp"])) else "off"
-            logging.info(
+            logger.info(
                 f"[{mname}] Setup | family={family} | k_best={select_k_best} | power_transform={bool(power_transform)} | "
                 f"scale={scale_flag} | freq_encode=True(th={plan.get('preprocess', {}).get('high_card_threshold', 50)})")
-            logging.info(
+            logger.info(
                 f"[{mname}] Search | strategy={search_strategy} | n_iter={n_iter_model} | scorer={primary_metric} | folds={folds} | n_jobs={n_jobs_eff}")
         except Exception:
             pass
@@ -816,14 +816,14 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
             est_name = type(best_est.named_steps.get(MODEL_STEP)).__name__
         except Exception:
             est_name = "?"
-        logging.info(
+        logger.info(
             f"[{mname}] Done | best_cv_{primary_metric}={best_score:.6f} | time={t1 - t0:.1f}s | estimator={est_name}")
 
         # LOG: mejores params del paso model (si existen)
         try:
             best_model = best_est.named_steps.get(MODEL_STEP)
             if hasattr(best_model, "get_params"):
-                logging.info(f"[{mname}] Best params (model): {best_model.get_params()}")
+                logger.info(f"[{mname}] Best params (model): {best_model.get_params()}")
         except Exception:
             pass
 
@@ -846,7 +846,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                     n_final = int(Xtr_sample.shape[1])
                 except Exception:
                     n_final = None
-                logging.info(
+                logger.info(
                     f"[{mname}] SelectKBest | k={k_req} | before={before} | selected={n_final} (nombres no disponibles)")
         except Exception:
             pass
@@ -932,9 +932,9 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                         final_est = CalibratedClassifierCV(final_est, method="isotonic", cv=cv).fit(X, y)
                 except TypeError:
                     final_est = CalibratedClassifierCV(final_est, method="isotonic", cv=cv).fit(X, y)
-                logging.info("Calibrated final estimator with isotonic regression.")
+                logger.info("Calibrated final estimator with isotonic regression.")
         except Exception as e:
-            logging.warning(f"Calibration skipped due to error: {e}")
+            logger.warning(f"Calibration skipped due to error: {e}")
 
     # 9) Fit final si hiciera falta
     if hasattr(final_est, "fit") and not hasattr(final_est, "classes_"):
@@ -955,7 +955,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
         if pre_fitted is not None:
             ok = export_preprocessed_dataset(pre_fitted, X, y, Path(run_dir) / "train_preprocessed.csv")
             if ok:
-                logging.info(f"Saved preprocessed training dataset: {Path(run_dir) / 'train_preprocessed.csv'}")
+                logger.info(f"Saved preprocessed training dataset: {Path(run_dir) / 'train_preprocessed.csv'}")
 
                 # Logs claros sobre columnas finales y SelectKBest
                 try:
@@ -973,21 +973,21 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                             n_before = len(getattr(sel, "scores_", []))  # #features evaluadas por k-best
                         except Exception:
                             pass
-                        logging.info(
+                        logger.info(
                             f"Preprocessed shape: ({n_rows}, {n_final_cols}) | "
                             f"SelectKBest(k={k_req}, before={n_before}, selected={n_final_cols})"
                         )
                     else:
-                        logging.info(f"Preprocessed shape: ({n_rows}, {n_final_cols}) (sin SelectKBest)")
+                        logger.info(f"Preprocessed shape: ({n_rows}, {n_final_cols}) (sin SelectKBest)")
                 except Exception as _e:
-                    logging.warning(f"No se pudo loguear shape preprocesado: {_e}")
+                    logger.warning(f"No se pudo loguear shape preprocesado: {_e}")
 
             else:
-                logging.warning("No se pudo exportar el dataset preprocesado (CSV).")
+                logger.warning("No se pudo exportar el dataset preprocesado (CSV).")
         else:
-            logging.warning("Final estimator no expone step 'pre'; se omite exportación del dataset preprocesado.")
+            logger.warning("Final estimator no expone step 'pre'; se omite exportación del dataset preprocesado.")
     except Exception as e:
-        logging.warning(f"Fallo al exportar dataset preprocesado: {e}")
+        logger.warning(f"Fallo al exportar dataset preprocesado: {e}")
 
     # 11) Reporte final (+ métricas del final si se pospusieron)
     final_metrics: Dict[str, Any] = {}
@@ -1051,13 +1051,13 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                 try:
                     plot_confusion(y, y_pred, str(Path(run_dir) / "confusion_matrix.png"))
                 except Exception as e:
-                    logging.warning(f"No se pudo guardar confusion_matrix.png: {e}")
+                    logger.warning(f"No se pudo guardar confusion_matrix.png: {e}")
                 if y_proba is not None:
                     try:
                         plot_roc_curve(y, y_proba, str(Path(run_dir) / "roc_curve.png"))
                         plot_pr_curve(y, y_proba, str(Path(run_dir) / "pr_curve.png"))
                     except Exception as e:
-                        logging.warning(f"No se pudo guardar ROC/PR: {e}")
+                        logger.warning(f"No se pudo guardar ROC/PR: {e}")
 
             if SAVE_OOF_PREDICTIONS:
                 try:
@@ -1078,9 +1078,9 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                         df_oof = pd.DataFrame({"y_true": y, "y_pred": y_pred})
                     df_oof.to_csv(out, index=False)
                 except Exception as e:
-                    logging.warning(f"No se pudo guardar oof_predictions.csv: {e}")
+                    logger.warning(f"No se pudo guardar oof_predictions.csv: {e}")
         except Exception as e:
-            logging.warning(f"Failed plotting/evaluating final metrics: {e}")
+            logger.warning(f"Failed plotting/evaluating final metrics: {e}")
 
     # 13) Importancias de características (si aplica)
     try:
@@ -1118,7 +1118,7 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
         if task == 'classification':
             _enrich_report_with_calibration_and_thresholds(final_est, X, y, Path(run_dir))
     except Exception as e:
-        logging.warning(f'No se pudo enriquecer reporte: {e}')
+        logger.warning(f'No se pudo enriquecer reporte: {e}')
 
     # 16) Limpieza de caché de joblib (reduce warnings de resource_tracker)
     try:
