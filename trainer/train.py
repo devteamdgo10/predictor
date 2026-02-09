@@ -287,12 +287,12 @@ def _save_auto_model_artifacts(
     primary_metric: str,
     y_pred: Optional[np.ndarray],
     y_proba: Optional[np.ndarray],
-) -> Optional[Dict[str, Any]]:
+) -> Optional[Path]:
     try:
-        models_root = _ensure_dir(run_dir / "models")
+        models_root = _ensure_dir(run_dir / "auto_models")
         model_dir = _safe_model_dir(models_root, model_name)
 
-        model_path = model_dir / "pipeline.joblib"
+        model_path = model_dir / "model.joblib"
         joblib.dump(estimator, str(model_path))
 
         report = {
@@ -305,7 +305,6 @@ def _save_auto_model_artifacts(
                 "model": str(model_path),
             },
         }
-        _save_json(model_dir / "metrics.json", metrics)
 
     if task == "classification" and y_pred is not None:
         if MAKE_PLOTS:
@@ -392,7 +391,7 @@ def _save_auto_model_artifacts(
                 pass
 
         _save_json(model_dir / "report.json", report)
-        return {"dir": model_dir, "artifacts": report.get("artifacts", {})}
+        return model_dir
     except Exception:
         return None
 
@@ -1017,9 +1016,9 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                     y_pred_model = cross_val_predict(best_est, X, y, cv=cv, n_jobs=n_jobs_eff, method="predict")
                 metrics = evaluate_regression(y, y_pred_model)
 
-        model_artifacts_info: Optional[Dict[str, Any]] = None
-        if mode in ("auto", "custom"):
-            model_artifacts_info = _save_auto_model_artifacts(
+        model_artifacts_dir = None
+        if mode == "auto":
+            model_artifacts_dir = _save_auto_model_artifacts(
                 Path(run_dir),
                 mname,
                 task,
@@ -1032,35 +1031,12 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
                 y_proba_model,
             )
 
-        artifacts_dir = None
-        if model_artifacts_info:
-            artifacts_dir = str(model_artifacts_info.get("dir"))
-        graficas = {}
-        if model_artifacts_info:
-            artifacts = model_artifacts_info.get("artifacts", {})
-            graficas.update({
-                "matriz_confusion": artifacts.get("confusion_matrix"),
-                "curva_roc": artifacts.get("roc_curve"),
-                "pr_curve": artifacts.get("pr_curve"),
-                "prediction_scatter": artifacts.get("prediction_scatter"),
-                "residuals": artifacts.get("residuals"),
-            })
-        corr_path = Path(run_dir) / "corr_heatmap.png"
-        missing_path = Path(run_dir) / "missing_bar.png"
-        calib_path = Path(run_dir) / "calibration_curve.png"
-        graficas.update({
-            "corr_heatmap": str(corr_path) if corr_path.exists() else None,
-            "missing_bar": str(missing_path) if missing_path.exists() else None,
-            "curva_calibracion": str(calib_path) if calib_path.exists() else None,
-        })
-
         results.append({
             "model": mname,
             "family": family,
             "cv_primary_score": float(best_score),
             "metrics": metrics,
-            "artifacts_dir": artifacts_dir,
-            "graficas": graficas,
+            "artifacts_dir": str(model_artifacts_dir) if model_artifacts_dir else None
         })
         fitted_models.append(best_est)
 
