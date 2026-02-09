@@ -668,6 +668,10 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
 
     primary_metric_cfg = getattr(cfg.train, "primary_metric", None)
     primary_metric = primary_metric_cfg or _primary_metric_default(task)
+    n_classes = int(pd.Series(y).dropna().nunique()) if task == "classification" else None
+    if task == "classification" and n_classes and n_classes > 2 and primary_metric == "roc_auc":
+        primary_metric = "roc_auc_ovr"
+        logger.info("Auto-tweak: métrica primaria -> roc_auc_ovr por multiclass.")
     # Si clasif. y desbalance alto y métrica no definida, usamos f1_macro
     if AUTO_TWEAKS and task == "classification" and primary_metric_cfg is None and ratio >= 1.5:
         primary_metric = "f1_macro"
@@ -1036,7 +1040,22 @@ def train_system(cfg: SystemConfig) -> Dict[str, Any]:
         })
         fitted_models.append(best_est)
 
-        _save_json(Path(run_dir) / "results_partial.json", {"results": results})
+        partial_payload = {
+            "task": task,
+            "best_models": [
+                {
+                    "model": r["model"],
+                    "family": r["family"],
+                    "cv_primary_score": r["cv_primary_score"],
+                    "metrics": r["metrics"],
+                    "graficas": r.get("graficas", {}),
+                    "run_dir": run_dir,
+                    "labels_info": {"target_mapping": target_mapping} if target_mapping else None,
+                }
+                for r in results
+            ],
+        }
+        _save_json(Path(run_dir) / "results_partial.json", partial_payload)
 
     if not results:
         raise RuntimeError(
