@@ -287,7 +287,7 @@ def _save_auto_model_artifacts(
     primary_metric: str,
     y_pred: Optional[np.ndarray],
     y_proba: Optional[np.ndarray],
-) -> Optional[Path]:
+    ) -> Optional[Path]:
     try:
         models_root = _ensure_dir(run_dir / "auto_models")
         model_dir = _safe_model_dir(models_root, model_name)
@@ -306,35 +306,35 @@ def _save_auto_model_artifacts(
             },
         }
 
-    if task == "classification" and y_pred is not None:
-        if MAKE_PLOTS:
-            try:
-                cm_path = model_dir / "confusion_matrix.png"
-                plot_confusion(y_true, y_pred, str(cm_path))
-                report["artifacts"]["confusion_matrix"] = str(cm_path)
-            except Exception:
-                pass
-            if y_proba is not None:
+        if task == "classification" and y_pred is not None:
+            if MAKE_PLOTS:
                 try:
-                    roc_path = model_dir / "roc_curve.png"
-                    pr_path = model_dir / "pr_curve.png"
-                    plot_roc_curve(y_true, y_proba, str(roc_path))
-                    plot_pr_curve(y_true, y_proba, str(pr_path))
-                    report["artifacts"]["roc_curve"] = str(roc_path)
-                    report["artifacts"]["pr_curve"] = str(pr_path)
+                    cm_path = model_dir / "confusion_matrix.png"
+                    plot_confusion(y_true, y_pred, str(cm_path))
+                    report["artifacts"]["confusion_matrix"] = str(cm_path)
                 except Exception:
                     pass
-
-        if SAVE_OOF_PREDICTIONS:
-            try:
-                out = model_dir / "oof_predictions.csv"
                 if y_proba is not None:
-                    if y_proba.ndim == 1:
-                        df_oof = pd.DataFrame({
-                                "y_true": y_true,
-                                "y_pred": y_pred,
-                                "proba_1": y_proba
-                            })
+                    try:
+                        roc_path = model_dir / "roc_curve.png"
+                        pr_path = model_dir / "pr_curve.png"
+                        plot_roc_curve(y_true, y_proba, str(roc_path))
+                        plot_pr_curve(y_true, y_proba, str(pr_path))
+                        report["artifacts"]["roc_curve"] = str(roc_path)
+                        report["artifacts"]["pr_curve"] = str(pr_path)
+                    except Exception:
+                        pass
+
+            if SAVE_OOF_PREDICTIONS:
+                try:
+                    out = model_dir / "oof_predictions.csv"
+                    if y_proba is not None:
+                        if y_proba.ndim == 1:
+                            df_oof = pd.DataFrame({
+                                    "y_true": y_true,
+                                    "y_pred": y_pred,
+                                    "proba_1": y_proba
+                                })
                         else:
                             cols = [f"proba_{i}" for i in range(y_proba.shape[1])]
                             df_oof = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
@@ -342,56 +342,56 @@ def _save_auto_model_artifacts(
                                 df_oof[c] = y_proba[:, i]
                     else:
                         df_oof = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
-                df_oof.to_csv(out, index=False)
-                report["artifacts"]["oof_predictions"] = str(out)
-            except Exception:
-                pass
-    elif task == "regression" and y_pred is not None:
-        if MAKE_PLOTS:
-            try:
-                import matplotlib.pyplot as plt
-                import numpy as _np
-                scatter_path = model_dir / "prediction_scatter.png"
-                residual_path = model_dir / "residuals.png"
+                        df_oof.to_csv(out, index=False)
+                    report["artifacts"]["oof_predictions"] = str(out)
+                except Exception:
+                    pass
+        elif task == "regression" and y_pred is not None:
+            if MAKE_PLOTS:
+                try:
+                    import matplotlib.pyplot as plt
+                    import numpy as _np
+                    scatter_path = model_dir / "prediction_scatter.png"
+                    residual_path = model_dir / "residuals.png"
 
-                plt.figure()
-                plt.scatter(y_true, y_pred, alpha=0.6)
-                min_v = float(_np.nanmin([_np.nanmin(y_true), _np.nanmin(y_pred)]))
-                max_v = float(_np.nanmax([_np.nanmax(y_true), _np.nanmax(y_pred)]))
-                plt.plot([min_v, max_v], [min_v, max_v], linestyle="--", color="gray")
-                plt.xlabel("y_true")
-                plt.ylabel("y_pred")
-                plt.title("Predicted vs True")
-                plt.tight_layout()
-                plt.savefig(scatter_path)
-                plt.close()
+                    plt.figure()
+                    plt.scatter(y_true, y_pred, alpha=0.6)
+                    min_v = float(_np.nanmin([_np.nanmin(y_true), _np.nanmin(y_pred)]))
+                    max_v = float(_np.nanmax([_np.nanmax(y_true), _np.nanmax(y_pred)]))
+                    plt.plot([min_v, max_v], [min_v, max_v], linestyle="--", color="gray")
+                    plt.xlabel("y_true")
+                    plt.ylabel("y_pred")
+                    plt.title("Predicted vs True")
+                    plt.tight_layout()
+                    plt.savefig(scatter_path)
+                    plt.close()
 
-                plt.figure()
-                residuals = _np.asarray(y_true) - _np.asarray(y_pred)
-                plt.hist(residuals, bins=30)
-                plt.xlabel("Residual")
-                plt.ylabel("Count")
-                plt.title("Residuals Distribution")
-                plt.tight_layout()
-                plt.savefig(residual_path)
-                plt.close()
+                    plt.figure()
+                    residuals = _np.asarray(y_true) - _np.asarray(y_pred)
+                    plt.hist(residuals, bins=30)
+                    plt.xlabel("Residual")
+                    plt.ylabel("Count")
+                    plt.title("Residuals Distribution")
+                    plt.tight_layout()
+                    plt.savefig(residual_path)
+                    plt.close()
 
-                report["artifacts"]["prediction_scatter"] = str(scatter_path)
-                report["artifacts"]["residuals"] = str(residual_path)
-            except Exception:
-                pass
+                    report["artifacts"]["prediction_scatter"] = str(scatter_path)
+                    report["artifacts"]["residuals"] = str(residual_path)
+                except Exception:
+                    pass
 
-        if SAVE_OOF_PREDICTIONS:
-            try:
-                out = model_dir / "oof_predictions.csv"
-                df_oof = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
-                df_oof.to_csv(out, index=False)
-                report["artifacts"]["oof_predictions"] = str(out)
-            except Exception:
-                pass
+            if SAVE_OOF_PREDICTIONS:
+                try:
+                    out = model_dir / "oof_predictions.csv"
+                    df_oof = pd.DataFrame({"y_true": y_true, "y_pred": y_pred})
+                    df_oof.to_csv(out, index=False)
+                    report["artifacts"]["oof_predictions"] = str(out)
+                except Exception:
+                    pass
 
-        _save_json(model_dir / "report.json", report)
-        return model_dir
+            _save_json(model_dir / "report.json", report)
+            return model_dir
     except Exception:
         return None
 
