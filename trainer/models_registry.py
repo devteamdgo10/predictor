@@ -159,6 +159,7 @@ _XGB_GPU_AVAILABLE: Optional[bool] = None
 _LGBM_GPU_AVAILABLE: Optional[bool] = None
 _LGBM_DEVICE_PARAM: Optional[str] = None  # 'device_type' (>=4.0) o 'device' (<=3.x)
 _CATBOOST_GPU_AVAILABLE: Optional[bool] = None
+_XGB_AVAILABLE: Optional[bool] = None
 
 def _probe_xgb_gpu() -> bool:
     global _XGB_GPU_AVAILABLE
@@ -174,6 +175,18 @@ def _probe_xgb_gpu() -> bool:
     except Exception:
         _XGB_GPU_AVAILABLE = False
     return _XGB_GPU_AVAILABLE
+
+
+def _xgb_available() -> bool:
+    global _XGB_AVAILABLE
+    if _XGB_AVAILABLE is not None:
+        return _XGB_AVAILABLE
+    try:
+        import xgboost  # noqa: F401
+        _XGB_AVAILABLE = True
+    except Exception:
+        _XGB_AVAILABLE = False
+    return _XGB_AVAILABLE
 
 def _probe_lgbm_gpu() -> bool:
     global _LGBM_GPU_AVAILABLE, _LGBM_DEVICE_PARAM
@@ -313,20 +326,21 @@ def get_classification_registry(use_gpu: bool = True,
         supports_class_weight=True, probabilistic=True, default_calibrate=True
     )
 
-    # XGBoost
-    try:
-        reg["xgb"] = ModelSpec(
-            name="xgb", task="classification", family="xgb",
-            make_estimator=lambda: _xgb_cls(use_gpu),
-            param_distributions=_xgb_space(bucket),
-            supports_class_weight=False, probabilistic=True, default_calibrate=True,
-            fit_param_grid={
-                # Para futura integración (no requerido por tu _fit_search actual)
-                # "early_stopping_rounds": [50, 100]  # ejemplo
-            }
-        )
-    except Exception:
-        pass
+    # XGBoost (solo si está instalado)
+    if _xgb_available():
+        try:
+            reg["xgb"] = ModelSpec(
+                name="xgb", task="classification", family="xgb",
+                make_estimator=lambda: _xgb_cls(use_gpu),
+                param_distributions=_xgb_space(bucket),
+                supports_class_weight=False, probabilistic=True, default_calibrate=True,
+                fit_param_grid={
+                    # Para futura integración (no requerido por tu _fit_search actual)
+                    # "early_stopping_rounds": [50, 100]  # ejemplo
+                }
+            )
+        except Exception:
+            pass
 
     # LightGBM
     try:
@@ -398,18 +412,19 @@ def get_regression_registry(use_gpu: bool = True,
         supports_class_weight=False, probabilistic=False, default_calibrate=False
     )
 
-    try:
-        reg["xgb"] = ModelSpec(
-            name="xgb", task="regression", family="xgb",
-            make_estimator=lambda: _xgb_reg(use_gpu),
-            param_distributions=_xgb_space(bucket),
-            supports_class_weight=False, probabilistic=False, default_calibrate=False,
-            fit_param_grid={
-                # "early_stopping_rounds": [50, 100]
-            }
-        )
-    except Exception:
-        pass
+    if _xgb_available():
+        try:
+            reg["xgb"] = ModelSpec(
+                name="xgb", task="regression", family="xgb",
+                make_estimator=lambda: _xgb_reg(use_gpu),
+                param_distributions=_xgb_space(bucket),
+                supports_class_weight=False, probabilistic=False, default_calibrate=False,
+                fit_param_grid={
+                    # "early_stopping_rounds": [50, 100]
+                }
+            )
+        except Exception:
+            pass
 
     try:
         reg["lgbm"] = ModelSpec(
